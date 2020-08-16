@@ -227,3 +227,80 @@ function Set-Newline {
 
 $escapeChar = [char]27
 $sl = $global:ThemeSettings #local settings
+
+
+
+function Get-TruncatedPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Management.Automation.PathInfo]
+        $dir,
+
+        [Parameter(Mandatory = $false)]
+        [System.Int32]
+        $dirsToShow = 1, 
+
+        [Parameter(Mandatory = $false)]
+        [System.Boolean]
+        $showTruncatedDirs = $true
+    )
+
+    $provider = Get-Provider -dir $dir
+
+    if ($provider -eq 'FileSystem') {
+        # on UNIX systems, a trailing slash can be present, yet when calling $HOME there isn't one
+        $path = $dir.Path.TrimEnd((Get-OSPathSeparator))
+        # list known paths and their substitutes
+        $knownPaths = (Get-Home), 'Microsoft.PowerShell.Core\FileSystem::'
+        $result = @()
+
+        # the number of folders are shown in a line prompt (zero based).  
+        $dirNum = $dirsToShow - 1
+        if($dirNum -le 0) { $dirNum = 0 }
+
+        # will use to hide drive in case of running on a windows
+        $isWin = [System.Environment]::OSVersion.Platform -eq 'Win32NT'
+        
+
+        while ($path -And -Not ($knownPaths.Contains($path))) {
+            $folder = $path.Split((Get-OSPathSeparator))[-1]
+
+            if ( ((Test-IsVCSRoot -Path $path) -and $showTruncatedDirs) `
+                -Or ($result.length -le $dirNum -and $result.length -ge 0) `
+                -Or -Not ($path.Contains((Get-OSPathSeparator)))) {
+
+                if(-not (!$showTruncatedDirs -and $isWin -and ($path -eq $folder)) ){
+                    $result = , $folder + $result
+                }
+            }
+            else {
+                if($showTruncatedDirs){
+                    $result = , $sl.PromptSymbols.TruncatedFolderSymbol + $result
+                } 
+            }
+
+            # remove the last element
+            $path = $path.TrimEnd($folder).TrimEnd((Get-OSPathSeparator))
+        }
+        $shortPath = $result -join $sl.PromptSymbols.PathSeparator
+        $rootLocation = (Get-FormattedRootLocation -dir $dir)
+
+        if ($rootLocation -and $shortPath) {
+
+            if($showTruncatedDirs) { 
+                return "$rootLocation$($sl.PromptSymbols.PathSeparator)$shortPath" 
+            }
+            return $shortPath
+        }
+
+        if ($rootLocation -and $showTruncatedDirs) {
+            return $rootLocation
+        }
+        return $shortPath
+    }
+    else {
+        return $dir.path.Replace((Get-FormattedRootLocation -dir $dir), '')
+    }
+
+}
+
